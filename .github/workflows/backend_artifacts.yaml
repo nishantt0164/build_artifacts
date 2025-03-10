@@ -1,0 +1,55 @@
+name: Upload Artifacts to S3
+
+on:
+  push:
+    branches:
+      - lumax  # Runs only when code is pushed to the main branch
+
+jobs:
+  upload-to-s3:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Variables
+        run: |
+          TIMESTAMP=$(date +'%d-%m-%Y_%H:%M:%S')
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+          echo "S3_BUCKET=buildartifacts-demo-fapl" >> $GITHUB_ENV
+          echo "CLIENTS=(lumax poojaforge)" >> $GITHUB_ENV  # List of clients
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1  # Change to your AWS region
+
+      - name: Upload Backend JAR Files to S3
+        run: |
+          for CLIENT in "${CLIENTS[@]}"; do
+            # Find the latest JAR for this specific CLIENT
+            LATEST_JAR=$(ls -t "$CLIENT-backend-"*.jar 2>/dev/null | head -n 1)
+
+            # If no JAR is found, exit with an error
+            if [ -z "$LATEST_JAR" ]; then
+              echo "ERROR: No JAR file found for $CLIENT. Failing the pipeline."
+              exit 1
+            fi
+
+            S3_BACKEND_PATH="s3://$S3_BUCKET/$CLIENT/backend"
+
+            # Upload the latest JAR with its original name
+            aws s3 cp "$LATEST_JAR" "$S3_BACKEND_PATH/$LATEST_JAR"
+
+            # Rename Previous Latest JAR
+            if aws s3 ls "$S3_BACKEND_PATH/latest.jar" > /dev/null 2>&1; then
+              PREV_LATEST_NAME=$(aws s3 ls "$S3_BACKEND_PATH/latest.jar" | awk '{print $4}')
+              aws s3 mv "$S3_BACKEND_PATH/latest.jar" "$S3_BACKEND_PATH/$PREV_LATEST_NAME"
+            fi
+
+            # Mark the uploaded JAR as the new latest
+            aws s3 cp "$S3_BACKEND_PATH/$LATEST_JAR" "$S3_BACKEND_PATH/latest.jar"
+          done
