@@ -3,7 +3,7 @@ name: Upload Artifacts to S3
 on:
   push:
     branches:
-      - lumax # Runs only when code is pushed to the main branch
+      - lumax
     paths:
       - "project_1/backend/*.jar"
       - "project_1/frontend/*.zip"
@@ -21,52 +21,58 @@ jobs:
           TIMESTAMP=$(date +'%d-%m-%Y_%H:%M:%S')
           echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
           echo "S3_BUCKET=buildartifacts-demo-fapl" >> $GITHUB_ENV
-          echo "BACKEND_PATH=projectX/backend" >> $GITHUB_ENV
-          echo "FRONTEND_PATH=projectX/frontend" >> $GITHUB_ENV
+          echo "BACKEND_PATH=project_1/backend" >> $GITHUB_ENV
+          echo "FRONTEND_PATH=project_1/frontend" >> $GITHUB_ENV
+
+      - name: Debug File Paths
+        run: |
+          echo "Checking backend files:"
+          ls -lah $BACKEND_PATH || echo "No backend directory found"
+          
+          echo "Checking frontend files:"
+          ls -lah $FRONTEND_PATH || echo "No frontend directory found"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1  # Change to your AWS region
+          aws-region: ap-south-1
 
       - name: Upload Backend JAR Files to S3
         run: |
-          BACKEND_JAR=$(ls -t $BACKEND_PATH/*.jar 2>/dev/null | head -n 1)
+          echo "Available JAR files:"
+          ls -1t $BACKEND_PATH/*.jar || echo "No JAR files found"
+
+          BACKEND_JAR=$(ls -1t $BACKEND_PATH/lumax-backend-*.jar 2>/dev/null | head -n 1)
+
           if [ -z "$BACKEND_JAR" ]; then
-            echo "No new backend JAR file found. Skipping..."
+            echo "No new Lumax backend JAR file found. Skipping..."
           else
             S3_BACKEND_PATH="s3://$S3_BUCKET/backend"
-            
+            echo "Uploading $BACKEND_JAR to $S3_BACKEND_PATH"
             aws s3 cp "$BACKEND_JAR" "$S3_BACKEND_PATH/$(basename $BACKEND_JAR)"
-            
-            # Rename previous latest if it exists
+
             if aws s3 ls "$S3_BACKEND_PATH/latest.jar" > /dev/null 2>&1; then
-              PREV_LATEST_NAME=$(aws s3 ls "$S3_BACKEND_PATH/latest.jar" | awk '{print $4}')
-              aws s3 mv "$S3_BACKEND_PATH/latest.jar" "$S3_BACKEND_PATH/$PREV_LATEST_NAME"
+              echo "Renaming latest.jar to previous_latest.jar"
+              aws s3 mv "$S3_BACKEND_PATH/latest.jar" "$S3_BACKEND_PATH/previous_latest.jar"
             fi
-            
-            # Mark new JAR as latest
+
+            echo "Tagging $BACKEND_JAR as latest.jar"
             aws s3 cp "$S3_BACKEND_PATH/$(basename $BACKEND_JAR)" "$S3_BACKEND_PATH/latest.jar"
           fi
 
       - name: Upload Frontend ZIP Files to S3
         run: |
-          FRONTEND_ZIP=$(ls -t $FRONTEND_PATH/*.zip 2>/dev/null | head -n 1)
+          echo "Available ZIP files:"
+          ls -1t $FRONTEND_PATH/*.zip || echo "No ZIP files found"
+
+          FRONTEND_ZIP=$(ls -1t $FRONTEND_PATH/*.zip 2>/dev/null | head -n 1)
+
           if [ -z "$FRONTEND_ZIP" ]; then
             echo "No new frontend ZIP file found. Skipping..."
           else
             S3_FRONTEND_PATH="s3://$S3_BUCKET/frontend"
-            
+            echo "Uploading $FRONTEND_ZIP to $S3_FRONTEND_PATH"
             aws s3 cp "$FRONTEND_ZIP" "$S3_FRONTEND_PATH/$(basename $FRONTEND_ZIP)"
-            
-            # Rename previous latest if it exists
-            if aws s3 ls "$S3_FRONTEND_PATH/latest.zip" > /dev/null 2>&1; then
-              PREV_LATEST_NAME=$(aws s3 ls "$S3_FRONTEND_PATH/latest.zip" | awk '{print $4}')
-              aws s3 mv "$S3_FRONTEND_PATH/latest.zip" "$S3_FRONTEND_PATH/$PREV_LATEST_NAME"
-            fi
-            
-            # Mark new ZIP as latest
-            aws s3 cp "$S3_FRONTEND_PATH/$(basename $FRONTEND_ZIP)" "$S3_FRONTEND_PATH/latest.zip"
           fi
