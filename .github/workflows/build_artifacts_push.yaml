@@ -1,0 +1,64 @@
+name: Upload Artifacts to S3
+
+on:
+  push:
+    branches:
+      - lumax
+    paths:
+      - "project_1/backend/*.jar"
+      - "project_1/frontend/*.zip"
+
+jobs:
+  upload-to-s3:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Variables
+        run: |
+          TIMESTAMP=$(date +'%d-%m-%Y_%H:%M:%S')
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+          echo "S3_BUCKET=buildartifacts-demo-fapl" >> $GITHUB_ENV
+          echo "BACKEND_PATH=project_1/backend" >> $GITHUB_ENV
+          echo "FRONTEND_PATH=project_1/frontend" >> $GITHUB_ENV
+
+      - name: Debug File Paths
+        run: |
+          echo "Checking backend files:"
+          ls -lah $BACKEND_PATH || echo "No backend directory found"
+          
+          echo "Checking frontend files:"
+          ls -lah $FRONTEND_PATH || echo "No frontend directory found"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Upload Backend JAR Files to S3
+        run: |
+          BACKEND_JAR=$(ls -t $BACKEND_PATH/*.jar 2>/dev/null | head -n 1)
+          if [ -z "$BACKEND_JAR" ]; then
+            echo "No new backend JAR file found. Skipping..."
+          else
+            S3_BACKEND_PATH="s3://$S3_BUCKET/backend"
+            aws s3 cp "$BACKEND_JAR" "$S3_BACKEND_PATH/$(basename $BACKEND_JAR)"
+            
+            if aws s3 ls "$S3_BACKEND_PATH/latest.jar" > /dev/null 2>&1; then
+              aws s3 mv "$S3_BACKEND_PATH/latest.jar" "$S3_BACKEND_PATH/previous_latest.jar"
+            fi
+            
+            aws s3 cp "$S3_BACKEND_PATH/$(basename $BACKEND_JAR)" "$S3_BACKEND_PATH/latest.jar"
+          fi
+
+      - name: Upload Frontend ZIP Files to S3
+        run: |
+          FRONTEND_ZIP=$(ls -t $FRONTEND_PATH/*.zip 2>/dev/null | head -n 1)
+          if [ -z "$FRONTEND_ZIP" ]; then
+            echo "No new frontend ZIP file found. Skipping..."
+          else
+            S3_FRONTEND_PATH="s3://$S3
