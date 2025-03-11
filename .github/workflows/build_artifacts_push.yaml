@@ -1,0 +1,72 @@
+name: Upload Artifacts to S3
+
+on:
+  push:
+    branches:
+      - lumax # Runs only when code is pushed to the main branch
+    paths:
+      - "project_1/backend/*.jar"
+      - "project_1/frontend/*.zip"
+
+jobs:
+  upload-to-s3:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Variables
+        run: |
+          TIMESTAMP=$(date +'%d-%m-%Y_%H:%M:%S')
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+          echo "S3_BUCKET=buildartifacts-demo-fapl" >> $GITHUB_ENV
+          echo "BACKEND_PATH=projectX/backend" >> $GITHUB_ENV
+          echo "FRONTEND_PATH=projectX/frontend" >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1  # Change to your AWS region
+
+      - name: Upload Backend JAR Files to S3
+        run: |
+          BACKEND_JAR=$(ls -t $BACKEND_PATH/*.jar 2>/dev/null | head -n 1)
+          if [ -z "$BACKEND_JAR" ]; then
+            echo "No new backend JAR file found. Skipping..."
+          else
+            S3_BACKEND_PATH="s3://$S3_BUCKET/backend"
+            
+            aws s3 cp "$BACKEND_JAR" "$S3_BACKEND_PATH/$(basename $BACKEND_JAR)"
+            
+            # Rename previous latest if it exists
+            if aws s3 ls "$S3_BACKEND_PATH/latest.jar" > /dev/null 2>&1; then
+              PREV_LATEST_NAME=$(aws s3 ls "$S3_BACKEND_PATH/latest.jar" | awk '{print $4}')
+              aws s3 mv "$S3_BACKEND_PATH/latest.jar" "$S3_BACKEND_PATH/$PREV_LATEST_NAME"
+            fi
+            
+            # Mark new JAR as latest
+            aws s3 cp "$S3_BACKEND_PATH/$(basename $BACKEND_JAR)" "$S3_BACKEND_PATH/latest.jar"
+          fi
+
+      - name: Upload Frontend ZIP Files to S3
+        run: |
+          FRONTEND_ZIP=$(ls -t $FRONTEND_PATH/*.zip 2>/dev/null | head -n 1)
+          if [ -z "$FRONTEND_ZIP" ]; then
+            echo "No new frontend ZIP file found. Skipping..."
+          else
+            S3_FRONTEND_PATH="s3://$S3_BUCKET/frontend"
+            
+            aws s3 cp "$FRONTEND_ZIP" "$S3_FRONTEND_PATH/$(basename $FRONTEND_ZIP)"
+            
+            # Rename previous latest if it exists
+            if aws s3 ls "$S3_FRONTEND_PATH/latest.zip" > /dev/null 2>&1; then
+              PREV_LATEST_NAME=$(aws s3 ls "$S3_FRONTEND_PATH/latest.zip" | awk '{print $4}')
+              aws s3 mv "$S3_FRONTEND_PATH/latest.zip" "$S3_FRONTEND_PATH/$PREV_LATEST_NAME"
+            fi
+            
+            # Mark new ZIP as latest
+            aws s3 cp "$S3_FRONTEND_PATH/$(basename $FRONTEND_ZIP)" "$S3_FRONTEND_PATH/latest.zip"
+          fi
