@@ -6,7 +6,6 @@ on:
       - lumax
     paths:
       - "project_1/backend/*.jar"
-      - "project_1/frontend/*.zip"
 
 jobs:
   upload-to-s3:
